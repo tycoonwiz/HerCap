@@ -8,8 +8,8 @@ import { logoMap } from './logoMap';
  * @returns The relative path to the logo image
  *
  * @example
- * getCompanyLogo("Animal Biome") // returns "/logos/AnimalBiome.png"
- * getCompanyLogo("Coffee Cloud") // returns "/logos/coffeecloud.png"
+ * getCompanyLogo("Animal Biome") // returns "/logos/AnimalBiome.png" (or "/HerCap/logos/AnimalBiome.png" on GitHub Pages)
+ * getCompanyLogo("Coffee Cloud") // returns "/logos/coffeecloud.png" (or "/HerCap/logos/coffeecloud.png" on GitHub Pages)
  */
 export function getCompanyLogo(companyName: string): string {
   if (!companyName) return '';
@@ -27,7 +27,7 @@ export function getCompanyLogo(companyName: string): string {
   }
 
   if (filename) {
-    return `/logos/${filename}`;
+    return `${import.meta.env.BASE_URL}logos/${filename}`;
   }
 
   // Fallback: return empty string (will trigger error handler)
