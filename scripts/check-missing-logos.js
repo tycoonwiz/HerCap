@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSyB7y_qbODe8bJVQSqDjFxB-SLvQJqCcKXO6rYTMPCvMxIVvWP_xQvR9bLH9vJJVbOo8dLYlxOZNBj/pub?output=csv';
-const LOGOS_DIR = path.join(__dirname, '..', 'logos');
+const LOGOS_DIR = path.join(__dirname, '..', 'public', 'logos');
 const LOGO_EXTENSIONS = ['.png', '.webp', '.avif', '.svg', '.jpg', '.jpeg'];
 
 async function fetchCompanies() {

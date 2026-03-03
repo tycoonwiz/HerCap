@@ -2,7 +2,7 @@
 
 # Find companies missing logos
 
-LOGOS_DIR="/Users/joshdaghir/Documents/Hercap/hercap/logos"
+LOGOS_DIR="/Users/joshdaghir/Documents/Hercap/hercap/public/logos"
 
 echo "📊 Checking for companies without matching logos..."
 echo ""

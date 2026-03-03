@@ -23,7 +23,7 @@ const __dirname = path.dirname(__filename);
 
 // Configuration
 const DEFAULT_INPUT_DIR = '/Users/joshdaghir/Documents/logos_uncropped';
-const DEFAULT_OUTPUT_DIR = path.join(__dirname, '..', 'logos');
+const DEFAULT_OUTPUT_DIR = path.join(__dirname, '..', 'public', 'logos');
 const PADDING = 10; // pixels of padding to keep around the logo
 const SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg'];
 
