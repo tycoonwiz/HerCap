@@ -11,7 +11,7 @@ interface StageViewProps {
 
 export function StageView({ stageFilter, setStageFilter }: StageViewProps) {
   const { portfolioData, loading, error } = usePortfolio();
-  const stages = ["all", "Angel", "Early", "Growth", "Public"];
+  const stages = ["all", "Angel", "Early", "Growth"];
   const filteredData =
     stageFilter === "all"
       ? portfolioData

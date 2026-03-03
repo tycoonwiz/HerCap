@@ -10,7 +10,7 @@ export interface Company {
   id: number;
   name: string;
   description: string;
-  stage: "Angel" | "Early" | "Growth" | "Public";
+  stage: "Angel" | "Early" | "Growth";
   location: string;
   primary: string;
   secondary?: string;
@@ -125,7 +125,14 @@ export function PortfolioProvider({
       })
       .then((csv) => {
         const companies = parseCSV(csv);
-        setPortfolioData(companies);
+        // Filter out Blink and SpotOn companies
+        const filteredCompanies = companies.filter(
+          (c) => 
+            c.name.toLowerCase() !== "blink" && 
+            c.name.toLowerCase() !== "spoton" &&
+            c.name.toLowerCase() !== "blink mobility"
+        );
+        setPortfolioData(filteredCompanies);
         setLoading(false);
       })
       .catch((err) => {
