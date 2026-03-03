@@ -4,6 +4,7 @@ import * as d3 from "d3";
 import * as topojson from "topojson-client";
 import { usePortfolio, getCoordinates, type Company } from "@/data/portfolio";
 import { Badge } from "@/components/ui/Badge/Badge";
+import { getCompanyLogo } from "@/utils/getCompanyLogo";
 
 interface GeographyViewProps {
   selectedStartup: Company | null;
@@ -464,7 +465,42 @@ export function GeographyView({
           <div className="portfolio__selected-header">
             <div className="portfolio__selected-info">
               <div className="portfolio__list-avatar">
-                {selectedStartup.name.substring(0, 2).toUpperCase()}
+                <img
+                  src={getCompanyLogo(selectedStartup.name)}
+                  alt={`${selectedStartup.name} logo`}
+                  onLoad={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    const aspectRatio = img.naturalWidth / img.naturalHeight;
+                    const container = img.parentElement;
+
+                    if (container) {
+                      // Adjust padding based on logo aspect ratio
+                      if (aspectRatio > 1.5) {
+                        // Wide logo - reduce vertical padding
+                        container.style.padding = '0.5rem 1rem';
+                      } else if (aspectRatio < 0.67) {
+                        // Tall logo - reduce horizontal padding
+                        container.style.padding = '1rem 0.5rem';
+                      } else {
+                        // Square-ish logo - balanced padding
+                        container.style.padding = '0.75rem';
+                      }
+                    }
+                  }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      parent.textContent = selectedStartup.name.substring(0, 2).toUpperCase();
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                  }}
+                />
               </div>
               <div>
                 {selectedStartup.website ? (

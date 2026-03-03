@@ -54,7 +54,7 @@
 }
 
 .case-studies__title:hover {
-  color: var(--color-slate-300);
+  color: var(--color-accent);
 }
 
 /* Modal */

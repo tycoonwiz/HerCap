@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { usePortfolio } from "@/data/portfolio";
 import { Card, CardContent } from "@/components/ui/Card/Card";
+import { getCompanyLogo } from "@/utils/getCompanyLogo";
 
 export function NameView() {
   const { portfolioData, loading, error } = usePortfolio();
@@ -36,27 +37,66 @@ export function NameView() {
             viewport={{ once: true }}
             transition={{ duration: 0.4, delay: (idx % 20) * 0.03 }}
           >
-            <Card className="portfolio__card">
-              <CardContent className="portfolio__card-content">
-                <div className="portfolio__card-avatar">
-                  {company.name.substring(0, 2).toUpperCase()}
-                </div>
-                {company.website ? (
-                  <a
-                    href={company.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="portfolio__card-name"
-                  >
-                    {company.name}
-                  </a>
-                ) : (
-                  <div className="portfolio__card-name">{company.name}</div>
-                )}
-                <div className="portfolio__card-sector">{company.primary}</div>
-                <p className="portfolio__card-desc">{company.description}</p>
-              </CardContent>
-            </Card>
+            {company.website ? (
+              <a
+                href={company.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="portfolio__card-link"
+              >
+                <Card className="portfolio__card">
+                  <CardContent className="portfolio__card-content">
+                    <div className="portfolio__card-avatar">
+                      <img
+                        src={getCompanyLogo(company.name)}
+                        alt={`${company.name} logo`}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            parent.textContent = company.name.substring(0, 2).toUpperCase();
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                        }}
+                      />
+                    </div>
+                    <div className="portfolio__card-sector">{company.primary}</div>
+                    <p className="portfolio__card-desc">{company.description}</p>
+                  </CardContent>
+                </Card>
+              </a>
+            ) : (
+              <Card className="portfolio__card">
+                <CardContent className="portfolio__card-content">
+                  <div className="portfolio__card-avatar">
+                    <img
+                      src={getCompanyLogo(company.name)}
+                      alt={`${company.name} logo`}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent) {
+                          parent.textContent = company.name.substring(0, 2).toUpperCase();
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                      }}
+                    />
+                  </div>
+                  <div className="portfolio__card-sector">{company.primary}</div>
+                  <p className="portfolio__card-desc">{company.description}</p>
+                </CardContent>
+              </Card>
+            )}
           </motion.div>
         ))}
       </div>

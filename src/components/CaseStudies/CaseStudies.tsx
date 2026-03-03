@@ -49,12 +49,12 @@ export function CaseStudies() {
               className="modal__input"
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
-                  alert('Password functionality to be implemented')
+                  alert('Incorrect Password')
                 }
               }}
             />
             <button
-              onClick={() => alert('Password functionality to be implemented')}
+              onClick={() => alert('Incorrect Password')}
               className="modal__submit"
             >
               Submit

@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { usePortfolio } from "@/data/portfolio";
 import { Badge } from "@/components/ui/Badge/Badge";
 import { Card } from "@/components/ui/Card/Card";
+import { getCompanyLogo } from "@/utils/getCompanyLogo";
 
 interface StageViewProps {
   stageFilter: string;
@@ -57,7 +58,42 @@ export function StageView({ stageFilter, setStageFilter }: StageViewProps) {
             <Card className="portfolio__list-card">
               <div className="portfolio__list-item">
                 <div className="portfolio__list-avatar">
-                  {company.name.substring(0, 2).toUpperCase()}
+                  <img
+                    src={getCompanyLogo(company.name)}
+                    alt={`${company.name} logo`}
+                    onLoad={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const aspectRatio = img.naturalWidth / img.naturalHeight;
+                      const container = img.parentElement;
+
+                      if (container) {
+                        // Adjust padding based on logo aspect ratio
+                        if (aspectRatio > 1.5) {
+                          // Wide logo - reduce vertical padding
+                          container.style.padding = '0.5rem 1rem';
+                        } else if (aspectRatio < 0.67) {
+                          // Tall logo - reduce horizontal padding
+                          container.style.padding = '1rem 0.5rem';
+                        } else {
+                          // Square-ish logo - balanced padding
+                          container.style.padding = '0.75rem';
+                        }
+                      }
+                    }}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent) {
+                        parent.textContent = company.name.substring(0, 2).toUpperCase();
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                    }}
+                  />
                 </div>
                 <div className="portfolio__list-info">
                   <h3 className="portfolio__list-name">{company.name}</h3>

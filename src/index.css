@@ -11,13 +11,19 @@
   --color-slate-800: #1e293b;
   --color-slate-900: #0f172a;
   --color-slate-950: #020617;
-  
+
   --color-sky-400: #38bdf8;
   --color-sky-500: #0ea5e9;
   --color-blue-600: #2563eb;
   --color-red-500: #ef4444;
   --color-red-600: #dc2626;
-  
+
+  --color-orange-600: #ea580c;
+  --color-orange-700: #c2410c;
+
+  --color-accent: var(--color-orange-600);
+  --color-accent-dark: var(--color-orange-700);
+
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }
 

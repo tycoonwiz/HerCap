@@ -4,21 +4,16 @@
 }
 
 .contact__container {
-  max-width: 72rem;
+  max-width: 80rem;
   margin: 0 auto;
-  padding: 4rem 1rem 5rem;
+  padding: 6rem 1rem;
 }
 
 .contact__title {
   font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 700;
+  font-weight: 300;
   letter-spacing: -0.025em;
   margin-bottom: 3rem;
-}
-
-.contact__grid {
-  display: grid;
-  gap: 2rem;
 }
 
 .contact__info {
@@ -64,29 +59,18 @@
 }
 
 .contact-row__email:hover {
-  color: var(--color-blue-600);
+  color: var(--color-accent);
 }
 
 @media (min-width: 640px) {
   .contact__container {
-    padding: 4rem 1.5rem 5rem;
-  }
-}
-
-@media (min-width: 768px) {
-  .contact__grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .contact__action {
-    align-items: center;
-    justify-content: flex-end;
+    padding: 6rem 1.5rem;
   }
 }
 
 @media (min-width: 1024px) {
   .contact__container {
-    padding: 4rem 2rem 5rem;
+    padding: 8rem 2rem;
   }
 }
 

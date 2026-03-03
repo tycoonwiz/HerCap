@@ -148,8 +148,10 @@ export function usePortfolio() {
 
 export const navItems = [
   { label: "About", href: "#about" },
+  { label: "Capabilities", href: "#capabilities" },
   { label: "Portfolio", href: "#portfolio" },
   { label: "Case Studies", href: "#case-studies" },
+  { label: "Team", href: "#team" },
   { label: "Contact", href: "#contact" },
 ];
 

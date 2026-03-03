@@ -2,10 +2,6 @@ import { navItems } from '@/data/portfolio'
 import './Header.css'
 
 export function Header() {
-  const scrollToContact = () => {
-    document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })
-  }
-
   return (
     <header className="header">
       <div className="header__container">
@@ -18,9 +14,6 @@ export function Header() {
               {item.label}
             </a>
           ))}
-          <button className="header__cta" onClick={scrollToContact}>
-            Pitch Us
-          </button>
         </nav>
       </div>
     </header>

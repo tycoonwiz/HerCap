@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion'
-import { ArrowRight } from 'lucide-react'
 import './Contact.css'
 
 interface ContactRowProps {
@@ -31,30 +30,17 @@ export function Contact() {
         >
           Contact
         </motion.h2>
-        <div className="contact__grid">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="contact__info"
-          >
-            <ContactRow label="Fundraise inquiries" email="pitch@heraldcapitalpartners.com" />
-            <ContactRow label="Media inquiries" email="press@heraldcapitalpartners.com" />
-            <ContactRow label="All other inquiries" email="info@heraldcapitalpartners.com" />
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="contact__action"
-          >
-            <a href="mailto:pitch@heraldcapitalpartners.com" className="contact__cta">
-              Submit Pitch <ArrowRight size={16} />
-            </a>
-          </motion.div>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, delay: 0.1 }}
+          className="contact__info"
+        >
+          <ContactRow label="Fundraise inquiries" email="pitch@heraldcapitalpartners.com" />
+          <ContactRow label="Media inquiries" email="press@heraldcapitalpartners.com" />
+          <ContactRow label="All other inquiries" email="info@heraldcapitalpartners.com" />
+        </motion.div>
       </div>
     </section>
   )

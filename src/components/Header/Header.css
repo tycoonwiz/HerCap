@@ -45,7 +45,7 @@
 }
 
 .header__link:hover {
-  color: var(--color-slate-900);
+  color: var(--color-accent);
 }
 
 .header__cta {

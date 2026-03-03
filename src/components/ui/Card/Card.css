@@ -1,13 +1,14 @@
 .card {
   border-radius: 0.75rem;
-  border: 1px solid var(--color-slate-800);
-  background-color: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--color-slate-200);
+  background-color: white;
   transition: all 0.3s ease;
 }
 
 .card:hover {
-  border-color: var(--color-slate-700);
-  background-color: rgba(15, 23, 42, 0.7);
+  border-color: var(--color-slate-300);
+  background-color: white;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
 .card-content {

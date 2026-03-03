@@ -2,36 +2,66 @@ import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { usePortfolio, type Company } from "@/data/portfolio";
 import { Badge } from "@/components/ui/Badge/Badge";
+import { getCompanyLogo } from "@/utils/getCompanyLogo";
 
-// Weights for weighted superposition calculation
-const WEIGHTS = {
-  primary: 0.5,
-  secondary: 0.4,
-  tertiary: 0.1,
+// === FORCE SIMULATION CONFIGURATION ===
+// Tunable parameters for Visual Thesaurus-style layout
+
+// Link distance targets (in pixels) with jitter ranges
+const LINK_DISTANCES = {
+  primary: { mean: 240, jitter: 40 },
+  secondary: { mean: 380, jitter: 50 },
+  tertiary: { mean: 540, jitter: 70 },
 };
 
-// Inner circle radius - companies within this will be scaled outward
-const INNER_RADIUS = 0.4;
+// Link strengths (0-1, higher = stronger attraction)
+const LINK_STRENGTHS = {
+  primary: 0.75,  // Reduced for more flexibility
+  secondary: 0.45,
+  tertiary: 0.25,
+};
 
-// Highlight colors for connection strengths
+// Node sizes
+const COMPANY_NODE_RADIUS = 36;
+const SECTOR_NODE_BASE_RADIUS = 50; // Larger than company nodes
+
+// Collision and physics forces
+const COLLISION_RADIUS = 75; // Much larger spacing between nodes
+const MANY_BODY_STRENGTH = -350; // Very strong repulsion to prevent overlap
+const CENTER_STRENGTH = 0.02; // Even weaker centering for maximum spread
+const ALPHA_DECAY = 0.008; // Very slow settling for optimal distribution
+const ALPHA_MIN = 0.001; // Threshold to stop simulation
+
+// Visual encoding
+const CONNECTION_COLOR = "rgb(148, 163, 184)"; // Slate-400
+
+// Orange color scheme for highlights
 const HIGHLIGHT_COLORS = {
-  primary: "#22c55e", // Green - strongest connection
-  secondary: "#f59e0b", // Amber - medium connection
-  tertiary: "#8b5cf6", // Purple - weakest connection
+  primary: "#ea580c",     // Orange-600 - strongest connection
+  secondary: "#fb923c",   // Orange-400 - medium connection
+  tertiary: "#fdba74",    // Orange-300 - weakest connection
 };
 
-interface CategoryPosition {
-  name: string;
-  x: number; // Unit circle x (-1 to 1)
-  y: number; // Unit circle y (-1 to 1)
-}
+// Sector node styling
+const SECTOR_NODE_COLOR = "#ea580c";        // Orange-600
+const SECTOR_NODE_SELECTED_COLOR = "#fb923c"; // Orange-400 when selected
 
-interface CompanyNode {
-  id: number;
-  name: string;
-  data: Company;
-  x: number; // Calculated superposition x
-  y: number; // Calculated superposition y
+// Deterministic random number generator for stable layouts
+class SeededRandom {
+  private seed: number;
+
+  constructor(seed: number) {
+    this.seed = seed;
+  }
+
+  next(): number {
+    this.seed = (this.seed * 9301 + 49297) % 233280;
+    return this.seed / 233280;
+  }
+
+  range(min: number, max: number): number {
+    return min + this.next() * (max - min);
+  }
 }
 
 interface SelectedCategory {
@@ -46,6 +76,7 @@ export function SectorView() {
   const [dimensions, setDimensions] = useState({ width: 1000, height: 600 });
   const [selectedCategory, setSelectedCategory] =
     useState<SelectedCategory | null>(null);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
 
   // Handle resize
   useEffect(() => {
@@ -57,394 +88,464 @@ export function SectorView() {
       setDimensions({ width: rect.width, height: rect.height });
     };
 
-    updateDimensions();
+    // Small delay to ensure container is rendered
+    const timer = setTimeout(updateDimensions, 100);
     const observer = new ResizeObserver(updateDimensions);
     observer.observe(container);
-    return () => observer.disconnect();
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
   }, []);
 
-  // D3 Visualization with weighted superposition
+  // D3 Force Simulation - Visual Thesaurus Style
   useEffect(() => {
     if (!svgRef.current || loading || portfolioData.length === 0) return;
 
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
+    try {
+      const svg = d3.select(svgRef.current);
+      svg.selectAll("*").remove();
 
-    const { width, height } = dimensions;
+      const { width, height } = dimensions;
 
-    // 1. Collect all categories and calculate weighted scores
-    const categoryScores: Map<string, number> = new Map();
+      // Safety check for valid dimensions
+      if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) return;
 
-    // Initialize scores for all categories
-    portfolioData.forEach((c) => {
-      if (!categoryScores.has(c.primary)) categoryScores.set(c.primary, 0);
-      if (c.secondary && !categoryScores.has(c.secondary))
-        categoryScores.set(c.secondary, 0);
-      if (c.tertiary && !categoryScores.has(c.tertiary))
-        categoryScores.set(c.tertiary, 0);
-    });
+      const centerX = width / 2;
+      const centerY = height / 2;
 
-    // Calculate weighted scores:
-    // For each company with category as Primary: add PRIMARY_WEIGHT
-    // For each company with category as Secondary: add SECONDARY_WEIGHT
-    // For each company with category as Tertiary: add TERTIARY_WEIGHT
-    portfolioData.forEach((c) => {
-      categoryScores.set(
-        c.primary,
-        categoryScores.get(c.primary)! + WEIGHTS.primary
-      );
-      if (c.secondary) {
-        categoryScores.set(
-          c.secondary,
-          categoryScores.get(c.secondary)! + WEIGHTS.secondary
-        );
-      }
-      if (c.tertiary) {
-        categoryScores.set(
-          c.tertiary,
-          categoryScores.get(c.tertiary)! + WEIGHTS.tertiary
-        );
-      }
-    });
+      // === STEP 1: Collect and score categories ===
+      const categoryScores: Map<string, number> = new Map();
 
-    // Sort categories by total score (highest first)
-    const sortedCategories = Array.from(categoryScores.entries())
-      .sort((a, b) => b[1] - a[1]) // Sort descending by score
-      .map(([name]) => name);
-    const categoryCount = sortedCategories.length;
-
-    // 2. Create unit circle positions for categories (sorted by weighted score)
-    // Using a PERFECT CIRCLE (same radius for x and y)
-    const categoryPositions: Map<string, CategoryPosition> = new Map();
-    sortedCategories.forEach((cat, i) => {
-      // Start from top (-π/2) and go clockwise
-      const angle = -Math.PI / 2 + (2 * Math.PI * i) / categoryCount;
-      categoryPositions.set(cat, {
-        name: cat,
-        x: Math.cos(angle), // Unit circle: -1 to 1
-        y: Math.sin(angle), // Unit circle: -1 to 1
+      portfolioData.forEach((c) => {
+        categoryScores.set(c.primary, (categoryScores.get(c.primary) || 0) + LINK_STRENGTHS.primary);
+        if (c.secondary) {
+          categoryScores.set(c.secondary, (categoryScores.get(c.secondary) || 0) + LINK_STRENGTHS.secondary);
+        }
+        if (c.tertiary) {
+          categoryScores.set(c.tertiary, (categoryScores.get(c.tertiary) || 0) + LINK_STRENGTHS.tertiary);
+        }
       });
-    });
 
-    // 3. Calculate weighted superposition for each company
-    const companyNodes: CompanyNode[] = portfolioData.map((company) => {
-      const primaryPos = categoryPositions.get(company.primary)!;
-      const secondaryPos = company.secondary
-        ? categoryPositions.get(company.secondary)
-        : null;
-      const tertiaryPos = company.tertiary
-        ? categoryPositions.get(company.tertiary)
-        : null;
+      const sortedCategories = Array.from(categoryScores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name]) => name);
 
-      // Weighted superposition: sum of (weight * position) for each level
-      let x = WEIGHTS.primary * primaryPos.x;
-      let y = WEIGHTS.primary * primaryPos.y;
+      // Update categories state for legend
+      setAllCategories(sortedCategories);
 
-      if (secondaryPos) {
-        x += WEIGHTS.secondary * secondaryPos.x;
-        y += WEIGHTS.secondary * secondaryPos.y;
+      // === STEP 2: Position sector nodes near perimeter with slight irregularity ===
+      // Use deterministic random for stable layout
+      const rng = new SeededRandom(42); // Fixed seed for deterministic layout
+      const baseRadius = Math.min(width, height) * 0.46; // Increased to spread categories even more
+
+      interface SectorNode extends d3.SimulationNodeDatum {
+        id: string;
+        name: string;
+        fx: number; // Fixed x position
+        fy: number; // Fixed y position
+        score: number;
       }
 
-      if (tertiaryPos) {
-        x += WEIGHTS.tertiary * tertiaryPos.x;
-        y += WEIGHTS.tertiary * tertiaryPos.y;
+      const sectorNodes: SectorNode[] = sortedCategories.map((cat, i) => {
+        const angle = -Math.PI / 2 + (2 * Math.PI * i) / sortedCategories.length;
+        const radiusJitter = rng.range(-20, 20); // Slight irregularity
+        const angleJitter = rng.range(-0.1, 0.1);
+        const finalAngle = angle + angleJitter;
+        const finalRadius = baseRadius + radiusJitter;
+
+        return {
+          id: `sector-${cat}`,
+          name: cat,
+          fx: centerX + Math.cos(finalAngle) * finalRadius,
+          fy: centerY + Math.sin(finalAngle) * finalRadius,
+          score: categoryScores.get(cat) || 0,
+        };
+      });
+
+      // === STEP 3: Create company nodes (initially at center, will be positioned by simulation) ===
+      interface CompanyNodeType extends d3.SimulationNodeDatum {
+        id: string;
+        companyId: number;
+        name: string;
+        data: Company;
       }
 
-      // Scale outward if within inner circle (minimum scaling along principal components)
-      const distance = Math.sqrt(x * x + y * y);
-      if (distance > 0 && distance < INNER_RADIUS) {
-        const scaleFactor = INNER_RADIUS / distance;
-        x *= scaleFactor;
-        y *= scaleFactor;
-      }
-
-      return {
-        id: company.id,
+      const companyNodes: CompanyNodeType[] = portfolioData.map((company) => ({
+        id: `company-${company.id}`,
+        companyId: company.id,
         name: company.name,
         data: company,
-        x,
-        y,
-      };
-    });
+        x: centerX + rng.range(-50, 50), // Small initial jitter
+        y: centerY + rng.range(-50, 50),
+      }));
 
-    // Scale factors to map unit coordinates to screen
-    // Use a PERFECT CIRCLE - same radius for both x and y
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const minDimension = Math.min(width, height);
-    const scale = Math.min(minDimension * 0.38, 260); // Same scale for x and y
+      // === STEP 4: Create links with deterministic distances ===
+      interface LinkType extends d3.SimulationLinkDatum<CompanyNodeType | SectorNode> {
+        source: string;
+        target: string;
+        strength: "primary" | "secondary" | "tertiary";
+        distance: number;
+      }
 
-    // Category circle radius (slightly larger than company spread) - PERFECT CIRCLE
-    const categoryRadius = scale * 1.2;
+      const links: LinkType[] = [];
 
-    // Container group for zoom/pan
-    const g = svg.append("g");
+      portfolioData.forEach((company) => {
+        const companyNodeId = `company-${company.id}`;
 
-    // Zoom behavior
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.3, 3])
-      .on("zoom", (event) => g.attr("transform", event.transform));
+        // Primary link
+        const primaryDist = LINK_DISTANCES.primary.mean + rng.range(-LINK_DISTANCES.primary.jitter, LINK_DISTANCES.primary.jitter);
+        links.push({
+          source: companyNodeId,
+          target: `sector-${company.primary}`,
+          strength: "primary",
+          distance: primaryDist,
+        });
 
-    svg.call(zoom);
+        // Secondary link
+        if (company.secondary) {
+          const secondaryDist = LINK_DISTANCES.secondary.mean + rng.range(-LINK_DISTANCES.secondary.jitter, LINK_DISTANCES.secondary.jitter);
+          links.push({
+            source: companyNodeId,
+            target: `sector-${company.secondary}`,
+            strength: "secondary",
+            distance: secondaryDist,
+          });
+        }
 
-    // Build connection map for a category
-    const buildConnectionMap = (categoryName: string) => {
-      const connections = new Map<
-        number,
-        "primary" | "secondary" | "tertiary"
-      >();
-      portfolioData.forEach((c) => {
-        if (c.primary === categoryName) {
-          connections.set(c.id, "primary");
-        } else if (c.secondary === categoryName) {
-          connections.set(c.id, "secondary");
-        } else if (c.tertiary === categoryName) {
-          connections.set(c.id, "tertiary");
+        // Tertiary link
+        if (company.tertiary) {
+          const tertiaryDist = LINK_DISTANCES.tertiary.mean + rng.range(-LINK_DISTANCES.tertiary.jitter, LINK_DISTANCES.tertiary.jitter);
+          links.push({
+            source: companyNodeId,
+            target: `sector-${company.tertiary}`,
+            strength: "tertiary",
+            distance: tertiaryDist,
+          });
         }
       });
-      return connections;
-    };
 
-    // Helper to get screen coordinates (using same scale for perfect circle)
-    const toScreen = (unitX: number, unitY: number, radius = scale) => ({
-      x: centerX + unitX * radius,
-      y: centerY + unitY * radius,
-    });
+      // === STEP 5: Create force simulation ===
+      const allNodes = [...sectorNodes, ...companyNodes];
 
-    // Draw links from companies to their categories
-    const linksGroup = g.append("g").attr("class", "links");
-
-    companyNodes.forEach((company) => {
-      const companyScreen = toScreen(company.x, company.y);
-
-      const drawLink = (
-        categoryName: string,
-        strength: "primary" | "secondary" | "tertiary"
-      ) => {
-        const catPos = categoryPositions.get(categoryName)!;
-        const catScreen = toScreen(catPos.x, catPos.y, categoryRadius);
-
-        let strokeColor: string;
-        let strokeWidth: number;
-        let opacity: number;
-
-        if (selectedCategory) {
-          if (selectedCategory.name === categoryName) {
-            strokeColor = HIGHLIGHT_COLORS[strength];
-            strokeWidth = strength === "primary" ? 2.5 : 1.5;
-            opacity = 0.8;
-          } else {
-            strokeColor = "rgba(51, 65, 85, 0.15)";
-            strokeWidth = 0.5;
-            opacity = 0.3;
-          }
-        } else {
-          switch (strength) {
-            case "primary":
-              strokeColor = "rgba(59, 130, 246, 0.5)";
-              strokeWidth = 1.5;
-              opacity = 0.6;
-              break;
-            case "secondary":
-              strokeColor = "rgba(148, 163, 184, 0.3)";
-              strokeWidth = 1;
-              opacity = 0.4;
-              break;
-            case "tertiary":
-              strokeColor = "rgba(71, 85, 105, 0.2)";
-              strokeWidth = 0.5;
-              opacity = 0.3;
-              break;
-          }
-        }
-
-        linksGroup
-          .append("line")
-          .attr("x1", companyScreen.x)
-          .attr("y1", companyScreen.y)
-          .attr("x2", catScreen.x)
-          .attr("y2", catScreen.y)
-          .attr("stroke", strokeColor)
-          .attr("stroke-width", strokeWidth)
-          .attr("opacity", opacity);
-      };
-
-      drawLink(company.data.primary, "primary");
-      if (company.data.secondary) {
-        drawLink(company.data.secondary, "secondary");
-      }
-      if (company.data.tertiary) {
-        drawLink(company.data.tertiary, "tertiary");
-      }
-    });
-
-    // Draw category nodes on the outer circle (PERFECT CIRCLE)
-    const categoryGroup = g.append("g").attr("class", "categories");
-
-    sortedCategories.forEach((cat) => {
-      const pos = categoryPositions.get(cat)!;
-      const screen = toScreen(pos.x, pos.y, categoryRadius);
-      const isSelected = selectedCategory?.name === cat;
-
-      const catNode = categoryGroup
-        .append("g")
-        .attr("transform", `translate(${screen.x}, ${screen.y})`)
-        .style("cursor", "pointer")
-        .on("click", (event) => {
-          event.stopPropagation();
-          if (selectedCategory?.name === cat) {
-            setSelectedCategory(null);
-          } else {
-            setSelectedCategory({
-              name: cat,
-              connections: buildConnectionMap(cat),
-            });
-          }
-        });
-
-      catNode
-        .append("circle")
-        .attr("r", 40)
-        .attr(
-          "fill",
-          isSelected ? "rgba(59, 130, 246, 0.3)" : "rgba(30, 41, 59, 0.95)"
+      const simulation = d3.forceSimulation(allNodes)
+        .force("link", d3.forceLink(links)
+          .id((d: any) => d.id)
+          .distance((d: any) => d.distance)
+          .strength((d: any) => LINK_STRENGTHS[d.strength])
         )
-        .attr("stroke", isSelected ? "rgb(96, 165, 250)" : "rgb(59, 130, 246)")
-        .attr("stroke-width", isSelected ? 3 : 2);
+        .force("charge", d3.forceManyBody()
+          .strength(MANY_BODY_STRENGTH)
+        )
+        .force("collision", d3.forceCollide()
+          .radius((d: any) => {
+            // Sector nodes are larger, need bigger collision radius
+            if (d.id.startsWith('sector-')) {
+              return SECTOR_NODE_BASE_RADIUS + 15;
+            }
+            return COLLISION_RADIUS;
+          })
+          .strength(0.9) // Strong collision prevention
+        )
+        .force("center", d3.forceCenter(centerX, centerY)
+          .strength(CENTER_STRENGTH)
+        )
+        .alphaDecay(ALPHA_DECAY)
+        .alphaMin(ALPHA_MIN);
 
-      // Category label with text wrapping
-      const text = catNode
-        .append("text")
-        .attr("text-anchor", "middle")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", "white")
-        .attr("font-size", "10px")
-        .attr("font-weight", "600")
-        .style("pointer-events", "none");
+      // === STEP 6: Setup SVG groups and rendering ===
+      const g = svg.append("g");
 
-      const words = cat.split(/\s+/);
-      if (words.length > 1 && cat.length > 10) {
-        text
-          .append("tspan")
-          .attr("x", 0)
-          .attr("dy", "-0.35em")
-          .text(words.slice(0, Math.ceil(words.length / 2)).join(" "));
-        text
-          .append("tspan")
-          .attr("x", 0)
-          .attr("dy", "1.1em")
-          .text(words.slice(Math.ceil(words.length / 2)).join(" "));
-      } else {
-        text.text(cat);
-      }
-    });
+      // Zoom behavior
+      const zoom = d3
+        .zoom<SVGSVGElement, unknown>()
+        .scaleExtent([0.3, 3])
+        .on("zoom", (event) => g.attr("transform", event.transform));
 
-    // Draw company nodes at their weighted superposition positions
-    const companyGroup = g.append("g").attr("class", "companies");
+      svg.call(zoom);
 
-    companyNodes.forEach((company) => {
-      const screen = toScreen(company.x, company.y);
-
-      const getColors = () => {
-        if (!selectedCategory) {
-          return {
-            fill: "rgb(30, 41, 59)",
-            stroke: "rgb(148, 163, 184)",
-            strokeWidth: 1.5,
-          };
-        }
-        const connectionType = selectedCategory.connections.get(company.id);
-        if (connectionType) {
-          return {
-            fill:
-              connectionType === "primary"
-                ? "rgba(34, 197, 94, 0.25)"
-                : connectionType === "secondary"
-                ? "rgba(245, 158, 11, 0.25)"
-                : "rgba(139, 92, 246, 0.25)",
-            stroke: HIGHLIGHT_COLORS[connectionType],
-            strokeWidth: 2.5,
-          };
-        }
-        return {
-          fill: "rgb(20, 28, 40)",
-          stroke: "rgb(71, 85, 105)",
-          strokeWidth: 1,
-        };
+      // Build connection map for a category
+      const buildConnectionMap = (categoryName: string) => {
+        const connections = new Map<
+          number,
+          "primary" | "secondary" | "tertiary"
+        >();
+        portfolioData.forEach((c) => {
+          if (c.primary === categoryName) {
+            connections.set(c.id, "primary");
+          } else if (c.secondary === categoryName) {
+            connections.set(c.id, "secondary");
+          } else if (c.tertiary === categoryName) {
+            connections.set(c.id, "tertiary");
+          }
+        });
+        return connections;
       };
 
-      const colors = getColors();
+      // Create SVG groups (order matters for z-index)
+      const linksGroup = g.append("g").attr("class", "links");
+      const sectorGroup = g.append("g").attr("class", "sectors");
+      const companyGroup = g.append("g").attr("class", "companies");
 
-      const compNode = companyGroup
-        .append("g")
-        .attr("transform", `translate(${screen.x}, ${screen.y})`)
-        .style("cursor", "pointer");
+      // Helper to get link data for rendering
+      const getLinkSource = (link: any): CompanyNodeType => {
+        return typeof link.source === 'object' ? link.source : companyNodes.find(n => n.id === link.source)!;
+      };
+      const getLinkTarget = (link: any): SectorNode => {
+        return typeof link.target === 'object' ? link.target : sectorNodes.find(n => n.id === link.target)!;
+      };
 
-      compNode
-        .append("circle")
-        .attr("r", 20)
-        .attr("fill", colors.fill)
-        .attr("stroke", colors.stroke)
-        .attr("stroke-width", colors.strokeWidth)
-        .on("mouseenter", function () {
-          const hoverStroke = selectedCategory?.connections.has(company.id)
-            ? colors.stroke
-            : "rgb(59, 130, 246)";
-          d3.select(this).attr("stroke", hoverStroke).attr("stroke-width", 2.5);
-          setHoveredNode(company.data);
-        })
-        .on("mouseleave", function () {
-          d3.select(this)
-            .attr("stroke", colors.stroke)
-            .attr("stroke-width", colors.strokeWidth);
-          setHoveredNode(null);
-        });
+      // Render function called on each simulation tick
+      const render = () => {
+        // Update link positions
+        linksGroup.selectAll<SVGLineElement, LinkType>("line")
+          .data(links)
+          .join("line")
+          .attr("x1", d => getLinkSource(d).x!)
+          .attr("y1", d => getLinkSource(d).y!)
+          .attr("x2", d => getLinkTarget(d).x!)
+          .attr("y2", d => getLinkTarget(d).y!)
+          .attr("stroke", d => {
+            if (!selectedCategory) return CONNECTION_COLOR;
+            const targetNode = getLinkTarget(d);
+            if (selectedCategory.name === targetNode.name) {
+              // Use orange color scheme for highlighted connections
+              return HIGHLIGHT_COLORS[d.strength];
+            }
+            return CONNECTION_COLOR;
+          })
+          .attr("stroke-width", d => {
+            if (!selectedCategory) {
+              return d.strength === "primary" ? 2 : d.strength === "secondary" ? 1.2 : 0.7;
+            }
+            const targetNode = getLinkTarget(d);
+            if (selectedCategory.name === targetNode.name) {
+              return d.strength === "primary" ? 3 : d.strength === "secondary" ? 2 : 1.2;
+            }
+            return 0.5;
+          })
+          .attr("opacity", d => {
+            if (!selectedCategory) {
+              return d.strength === "primary" ? 0.5 : d.strength === "secondary" ? 0.3 : 0.15;
+            }
+            const targetNode = getLinkTarget(d);
+            if (selectedCategory.name === targetNode.name) {
+              return d.strength === "primary" ? 0.9 : d.strength === "secondary" ? 0.7 : 0.5;
+            }
+            return 0.08;
+          });
 
-      compNode
-        .append("text")
-        .text(company.name.substring(0, 2).toUpperCase())
-        .attr("text-anchor", "middle")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", () => {
-          if (!selectedCategory) return "white";
-          return selectedCategory.connections.has(company.id)
-            ? "white"
-            : "rgb(100, 116, 139)";
-        })
-        .attr("font-size", "10px")
-        .attr("font-weight", "600")
-        .style("pointer-events", "none");
-    });
+        // Update sector node positions
+        sectorGroup.selectAll<SVGGElement, SectorNode>("g")
+          .data(sectorNodes)
+          .join("g")
+          .attr("transform", d => `translate(${d.fx}, ${d.fy})`)
+          .each(function(d) {
+            const group = d3.select(this);
+            const isSelected = selectedCategory?.name === d.name;
+            const maxScore = Math.max(...sectorNodes.map(n => n.score));
+            const sizeScale = maxScore > 0 ? 0.7 + (d.score / maxScore) * 0.5 : 1;
 
-    // Draw central HerCap node (portfolio owner) - disjoint from all connections
-    const hercapGroup = g.append("g").attr("class", "hercap-center");
-    const hercapNode = hercapGroup
-      .append("g")
-      .attr("transform", `translate(${centerX}, ${centerY})`);
+            // Calculate sector node size (larger than company nodes)
+            const sectorRadius = SECTOR_NODE_BASE_RADIUS * sizeScale;
 
-    hercapNode
-      .append("circle")
-      .attr("r", 48)
-      .attr("fill", "rgba(15, 23, 42, 0.98)")
-      .attr("stroke", "rgb(234, 179, 8)")
-      .attr("stroke-width", 3);
+            // Update or create circle
+            group.selectAll("circle")
+              .data([d])
+              .join("circle")
+              .attr("r", sectorRadius)
+              .attr("fill", isSelected ? "rgba(251, 146, 60, 0.3)" : "rgba(30, 41, 59, 0.95)") // Orange-400 when selected
+              .attr("stroke", isSelected ? SECTOR_NODE_SELECTED_COLOR : SECTOR_NODE_COLOR)
+              .attr("stroke-width", isSelected ? 3 : 2)
+              .style("cursor", "pointer")
+              .on("click", (event) => {
+                event.stopPropagation();
+                if (selectedCategory?.name === d.name) {
+                  setSelectedCategory(null);
+                } else {
+                  setSelectedCategory({
+                    name: d.name,
+                    connections: buildConnectionMap(d.name),
+                  });
+                }
+              })
+              .on("mouseenter", function() {
+                if (!isSelected) {
+                  d3.select(this)
+                    .transition()
+                    .duration(200)
+                    .attr("fill", "rgba(234, 88, 12, 0.15)") // Light orange on hover
+                    .attr("stroke-width", 2.5);
+                }
+              })
+              .on("mouseleave", function() {
+                if (!isSelected) {
+                  d3.select(this)
+                    .transition()
+                    .duration(200)
+                    .attr("fill", "rgba(30, 41, 59, 0.95)")
+                    .attr("stroke-width", 2);
+                }
+              });
 
-    hercapNode
-      .append("text")
-      .text("HerCap")
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
-      .attr("fill", "rgb(250, 204, 21)")
-      .attr("font-size", "14px")
-      .attr("font-weight", "700")
-      .attr("letter-spacing", "0.5px")
-      .style("pointer-events", "none");
+            // Update or create text
+            const fontSize = Math.max(9, Math.min(11, 10 * sizeScale));
+            group.selectAll("text").remove(); // Remove old text
+            const text = group.append("text")
+              .attr("text-anchor", "middle")
+              .attr("dominant-baseline", "middle")
+              .attr("fill", isSelected ? "rgb(255, 255, 255)" : "rgb(226, 232, 240)")
+              .attr("font-size", `${fontSize}px`)
+              .attr("font-weight", "600")
+              .style("pointer-events", "none");
 
-    // Click on background to deselect
-    svg.on("click", () => {
-      setSelectedCategory(null);
-    });
+            const words = d.name.split(/\s+/);
+            if (words.length > 1 && d.name.length > 10) {
+              text.append("tspan")
+                .attr("x", 0)
+                .attr("dy", "-0.35em")
+                .text(words.slice(0, Math.ceil(words.length / 2)).join(" "));
+              text.append("tspan")
+                .attr("x", 0)
+                .attr("dy", "1.1em")
+                .text(words.slice(Math.ceil(words.length / 2)).join(" "));
+            } else {
+              text.text(d.name);
+            }
+          });
+
+        // Update company node positions
+        companyGroup.selectAll<SVGGElement, CompanyNodeType>("g")
+          .data(companyNodes)
+          .join("g")
+          .attr("transform", d => `translate(${d.x}, ${d.y})`)
+          .style("cursor", "pointer")
+          .style("opacity", d => {
+            if (!selectedCategory) return 1;
+            return selectedCategory.connections.has(d.companyId) ? 1 : 0.4;
+          })
+          .each(function(d) {
+            const group = d3.select(this);
+            const connectionType = selectedCategory?.connections.get(d.companyId);
+
+            const fillColor = !selectedCategory
+              ? "rgb(30, 41, 59)"
+              : connectionType === "primary"
+              ? "rgba(234, 88, 12, 0.3)"   // Orange-600 with transparency
+              : connectionType === "secondary"
+              ? "rgba(251, 146, 60, 0.25)"  // Orange-400 with transparency
+              : connectionType === "tertiary"
+              ? "rgba(253, 186, 116, 0.2)"  // Orange-300 with transparency
+              : "rgb(15, 23, 42)";
+
+            const strokeColor = !selectedCategory
+              ? "rgb(100, 116, 139)"
+              : connectionType
+              ? HIGHLIGHT_COLORS[connectionType]
+              : "rgb(51, 65, 85)";
+
+            const strokeWidth = !selectedCategory
+              ? 1.5
+              : connectionType === "primary"
+              ? 3
+              : connectionType === "secondary"
+              ? 2.5
+              : connectionType === "tertiary"
+              ? 2
+              : 1;
+
+            // Update or create circle
+            group.selectAll("circle")
+              .data([d])
+              .join("circle")
+              .attr("r", COMPANY_NODE_RADIUS)
+              .attr("fill", fillColor)
+              .attr("stroke", strokeColor)
+              .attr("stroke-width", strokeWidth)
+              .on("mouseenter", function() {
+                const hoverStroke = connectionType ? strokeColor : "rgb(96, 165, 250)";
+                const circle = this as SVGCircleElement;
+                d3.select(circle)
+                  .transition()
+                  .duration(150)
+                  .attr("stroke", hoverStroke)
+                  .attr("stroke-width", 3)
+                  .attr("r", COMPANY_NODE_RADIUS + 2);
+                if (circle.parentNode) {
+                  d3.select(circle.parentNode as SVGGElement)
+                    .transition()
+                    .duration(150)
+                    .style("opacity", 1);
+                }
+                setHoveredNode(d.data);
+              })
+              .on("mouseleave", function() {
+                const circle = this as SVGCircleElement;
+                d3.select(circle)
+                  .transition()
+                  .duration(150)
+                  .attr("stroke", strokeColor)
+                  .attr("stroke-width", strokeWidth)
+                  .attr("r", COMPANY_NODE_RADIUS);
+                if (circle.parentNode) {
+                  d3.select(circle.parentNode as SVGGElement)
+                    .transition()
+                    .duration(150)
+                    .style("opacity", selectedCategory && !connectionType ? 0.4 : 1);
+                }
+                setHoveredNode(null);
+              });
+
+            // Update or create logo/initials (only once)
+            if (group.selectAll("image, text.company-logo").empty()) {
+              const logoPath = getCompanyLogo(d.name);
+              group.append("image")
+                .attr("href", logoPath)
+                .attr("x", -28)
+                .attr("y", -28)
+                .attr("width", 56)
+                .attr("height", 56)
+                .style("pointer-events", "none")
+                .on("error", function() {
+                  d3.select(this).remove();
+                  group.append("text")
+                    .attr("class", "company-logo")
+                    .text(d.name.substring(0, 2).toUpperCase())
+                    .attr("text-anchor", "middle")
+                    .attr("dominant-baseline", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "14px")
+                    .attr("font-weight", "600")
+                    .style("pointer-events", "none");
+                });
+            }
+          });
+      };
+
+      // Initial render
+      render();
+
+      // Run simulation and update on each tick
+      simulation.on("tick", render);
+
+      // Stop simulation after it settles
+      simulation.on("end", () => {
+        console.log("Force simulation completed");
+      });
+
+      // Click on background to deselect
+      svg.on("click", () => {
+        setSelectedCategory(null);
+      });
+
+      // Cleanup function
+      return () => {
+        simulation.stop();
+      };
+    } catch (error) {
+      console.error("Error rendering SectorView:", error);
+    }
   }, [portfolioData, loading, dimensions, selectedCategory]);
 
   if (loading) {
@@ -468,32 +569,41 @@ export function SectorView() {
       <div className="portfolio__sector-legend">
         <div className="portfolio__sector-legend-title">
           {selectedCategory
-            ? `"${selectedCategory.name}" connections`
+            ? `"${selectedCategory.name}"`
             : "Click a sector to highlight"}
         </div>
-        <div className="portfolio__sector-legend-items">
-          <div className="portfolio__sector-legend-item">
-            <span
-              className="portfolio__sector-legend-dot"
-              style={{ backgroundColor: HIGHLIGHT_COLORS.primary }}
-            />
-            <span>Primary</span>
+        {!selectedCategory && allCategories.length > 0 && (
+          <div className="portfolio__sector-legend-items" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: '0.375rem',
+            maxHeight: '200px',
+            overflowY: 'auto'
+          }}>
+            {allCategories.map((category) => (
+              <div
+                key={category}
+                className="portfolio__sector-legend-item"
+                style={{ cursor: 'pointer' }}
+                onClick={() => {
+                  const connections = new Map<number, "primary" | "secondary" | "tertiary">();
+                  portfolioData.forEach((c) => {
+                    if (c.primary === category) {
+                      connections.set(c.id, "primary");
+                    } else if (c.secondary === category) {
+                      connections.set(c.id, "secondary");
+                    } else if (c.tertiary === category) {
+                      connections.set(c.id, "tertiary");
+                    }
+                  });
+                  setSelectedCategory({ name: category, connections });
+                }}
+              >
+                <span style={{ fontSize: '0.75rem' }}>{category}</span>
+              </div>
+            ))}
           </div>
-          <div className="portfolio__sector-legend-item">
-            <span
-              className="portfolio__sector-legend-dot"
-              style={{ backgroundColor: HIGHLIGHT_COLORS.secondary }}
-            />
-            <span>Secondary</span>
-          </div>
-          <div className="portfolio__sector-legend-item">
-            <span
-              className="portfolio__sector-legend-dot"
-              style={{ backgroundColor: HIGHLIGHT_COLORS.tertiary }}
-            />
-            <span>Tertiary</span>
-          </div>
-        </div>
+        )}
         {selectedCategory && (
           <button
             className="portfolio__sector-legend-clear"
