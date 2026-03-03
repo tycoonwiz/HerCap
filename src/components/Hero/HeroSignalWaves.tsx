@@ -1,4 +1,3 @@
-import React from 'react';
 import styles from './HeroSignalWaves.module.css';
 
 interface HeroSignalWavesProps {

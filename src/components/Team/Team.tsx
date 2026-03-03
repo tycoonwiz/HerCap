@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import './Team.css'
-import camHeadshot from '/headshots/cam.jpeg'
-import timHeadshot from '/headshots/tim.webp'
+import camHeadshot from '../../../headshots/cam.jpeg'
+import timHeadshot from '../../../headshots/tim.webp'
 
 export function Team() {
   return (

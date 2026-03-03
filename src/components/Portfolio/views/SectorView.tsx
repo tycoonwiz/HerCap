@@ -233,7 +233,7 @@ export function SectorView() {
         .force("link", d3.forceLink(links)
           .id((d: any) => d.id)
           .distance((d: any) => d.distance)
-          .strength((d: any) => LINK_STRENGTHS[d.strength])
+          .strength((d: any) => LINK_STRENGTHS[d.strength as keyof typeof LINK_STRENGTHS])
         )
         .force("charge", d3.forceManyBody()
           .strength(MANY_BODY_STRENGTH)
